@@ -1,77 +1,685 @@
-<html>
+<!DOCTYPE html>
+<html lang="en">
   <head>
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="apple-mobile-web-app-capable" content="yes">    
-    <script src="https://cdn.jsdelivr.net/npm/aframe@1.3.0/dist/aframe-master.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/mind-ar@1.2.1/dist/mindar-image-aframe.prod.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+    <meta name="theme-color" content="#0d0d0d">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <title>The Radical Store · Totoro AR</title>
+
+    <!-- Brand typefaces: Archivo Black (display), Space Grotesk (body/UI), DM Mono (labels) -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Archivo+Black&family=DM+Mono:wght@400;500&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+    <!-- A-Frame + MindAR, self-hosted (2D/video effects). No external CDN. -->
+    <script src="aframe-master.min.js"></script>
+    <script src="mindar-image-aframe.prod.js"></script>
+
+    <!-- Snapshot hook: tock runs AFTER each A-Frame render, so the canvas still
+         holds the drawn pixels (no preserveDrawingBuffer needed). -->
+    <script>
+      window.__snap = { req: false, capture: null };
+      AFRAME.registerComponent("snapshotter", {
+        tock: function () {
+          const s = window.__snap;
+          if (s && s.req && s.capture) { s.req = false; s.capture(); }
+        }
+      });
+    </script>
+
     <style>
-      .button-container {
-        position: fixed;
-        top: 10px;
-        left: 50%;
-        transform: translateX(-50%);
-        display: flex;
-        gap: 10px;
-        z-index: 2;
+      /* ---- Brand tokens (identical names to the design system) ---- */
+      :root {
+        --ink:     #0d0d0d;
+        --paper:   #f4f1ea;
+        --paper2:  #ece7db;
+        --orange:  #ff5b1e;
+        --orange2: #e8410a;
+        --violet:  #5b3fff;
+        --acid:    #d4ff3f;
+        --pink:    #ff4fa3;
+
+        --f-display: 'Archivo Black', system-ui, sans-serif;
+        --f-body:    'Space Grotesk', system-ui, sans-serif;
+        --f-mono:    'DM Mono', ui-monospace, monospace;
       }
-      .button {
-        padding: 10px 20px;
-        font-size: 16px;
-        font-weight: bold;
-        color: white;
-        background-color: black;
-        border: none;
-        border-radius: 8px;
+
+      * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+
+      html, body {
+        position: relative;
+        margin: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        font-family: var(--f-body);
+        /* MindAR puts the camera video behind the page; the body must stay
+           transparent or it paints an opaque layer over the live feed. Opaque
+           colour lives only on the full-screen overlays (.paper-grid). */
+        background: transparent;
+      }
+
+      /* Warm-paper dotted grid, reused across every overlay */
+      .paper-grid {
+        background-color: var(--paper);
+        background-image: radial-gradient(var(--paper2) 1.6px, transparent 1.6px);
+        background-size: 22px 22px;
+      }
+
+      /* ---- Shared neo-brutalist primitives ---- */
+      .kicker {
+        font-family: var(--f-mono);
+        font-size: 12px;
+        letter-spacing: 2px;
+        text-transform: uppercase;
+        color: var(--ink);
+      }
+
+      .btn {
+        font-family: var(--f-display);
+        text-transform: uppercase;
+        letter-spacing: -0.3px;
+        font-size: 15px;
+        color: var(--paper);
+        background: var(--ink);
+        border: 2px solid var(--ink);
+        border-radius: 34px;            /* pill */
+        padding: 14px 22px;             /* >=44px tap target */
+        min-height: 48px;
         cursor: pointer;
-        transition: background 0.3s ease;
+        box-shadow: 3px 3px 0 var(--ink);
+        transition: transform .14s, box-shadow .14s, background .14s;
+        user-select: none;
+      }
+      .btn--orange { background: var(--orange); color: var(--ink); }
+      .btn--paper  { background: var(--paper);  color: var(--ink); }
+
+      /* Touch devices don't hover — use :active so the lift fires on press */
+      .btn:active {
+        transform: translate(-2px, -2px);
+        box-shadow: 5px 5px 0 var(--violet);
+      }
+      @media (hover: hover) {
+        .btn:hover { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--violet); }
+      }
+
+      /* ---- Full-screen overlays ---- */
+      .overlay {
+        position: fixed;
+        inset: 0;
+        z-index: 9999;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 22px;
+        padding: 28px calc(22px + env(safe-area-inset-right)) calc(28px + env(safe-area-inset-bottom)) calc(22px + env(safe-area-inset-left));
         text-align: center;
       }
-      .button:hover {
-        background-color: #333;
+      .overlay[hidden] { display: none; }
+
+      .headline {
+        font-family: var(--f-display);
+        text-transform: uppercase;
+        letter-spacing: -2px;
+        line-height: 0.92;
+        font-size: clamp(40px, 13vw, 72px);
+        color: var(--ink);
+        margin: 0;
+      }
+      .headline .pop { color: var(--orange); }
+
+      .lede {
+        font-family: var(--f-body);
+        font-weight: 500;
+        font-size: 16px;
+        line-height: 1.4;
+        color: var(--ink);
+        max-width: 30ch;
+        margin: 0;
+      }
+
+      /* Brand "card" badge wrapping the on-screen instructions */
+      .scan-card {
+        background: var(--paper2);
+        border: 3px solid var(--ink);
+        border-radius: 18px;
+        box-shadow: 6px 6px 0 var(--ink);
+        padding: 22px 24px;
+        max-width: 340px;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 14px;
+      }
+
+      /* Real target preview, framed as a brand component, with scan overlay */
+      .scan-target {
+        position: relative;
+        width: 150px;
+        aspect-ratio: 3 / 4;
+        flex: none;
+        border: 3px solid var(--ink);
+        border-radius: 12px;
+        box-shadow: 6px 6px 0 var(--ink);
+        overflow: hidden;
+        background: var(--paper);
+      }
+      .scan-target img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+      /* Fallback ⚡ when target.jpeg hasn't been added yet */
+      .scan-target img.is-missing { display: none; }
+      .scan-target img.is-missing ~ .sweep { display: none; }
+      .scan-target::before {
+        content: "⚡";
+        position: absolute;
+        inset: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 54px;
+        opacity: 0;
+      }
+      .scan-target:has(img.is-missing)::before { opacity: 1; }
+
+      /* Corner brackets + sweeping line — the "scan this" affordance */
+      .scan-target i {
+        position: absolute;
+        width: 22px;
+        height: 22px;
+        border: 4px solid var(--paper);
+        mix-blend-mode: difference;
+        z-index: 2;
+      }
+      .scan-target i:nth-child(2){ top:5px; left:5px;  border-right:0; border-bottom:0; }
+      .scan-target i:nth-child(3){ top:5px; right:5px; border-left:0;  border-bottom:0; }
+      .scan-target i:nth-child(4){ bottom:5px; left:5px;  border-right:0; border-top:0; }
+      .scan-target i:nth-child(5){ bottom:5px; right:5px; border-left:0;  border-top:0; }
+      .scan-target .sweep {
+        position: absolute;
+        left: 5px; right: 5px;
+        height: 3px;
+        background: var(--orange);
+        box-shadow: 0 0 6px 1px var(--orange);
+        z-index: 2;
+        animation: sweep 1.9s ease-in-out infinite;
+      }
+      @keyframes sweep {
+        0%, 100% { top: 8%; }
+        50%      { top: 88%; }
+      }
+
+      /* ---- Loading spinner (hard-edged, on-brand) ---- */
+      .loader-box {
+        width: 64px; height: 64px;
+        border: 5px solid var(--ink);
+        border-top-color: var(--orange);
+        border-radius: 14px;
+        box-shadow: 5px 5px 0 var(--ink);
+        animation: spin 0.8s linear infinite;
+      }
+      @keyframes spin { to { transform: rotate(360deg); } }
+
+      /* ---- In-AR viewfinder reticle (over live camera, transparent center) ---- */
+      .reticle {
+        position: fixed;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -54%);
+        width: min(68vw, 300px);
+        aspect-ratio: 3 / 4;
+        z-index: 40;
+        pointer-events: none;
+        overflow: hidden;
+      }
+      .reticle[hidden] { display: none; }
+      .reticle i {
+        position: absolute;
+        width: 34px;
+        height: 34px;
+        border: 4px solid var(--orange);
+        filter: drop-shadow(2px 2px 0 var(--ink));
+      }
+      .reticle i:nth-child(1){ top:0; left:0;  border-right:0; border-bottom:0; border-top-left-radius:6px; }
+      .reticle i:nth-child(2){ top:0; right:0; border-left:0;  border-bottom:0; border-top-right-radius:6px; }
+      .reticle i:nth-child(3){ bottom:0; left:0;  border-right:0; border-top:0; border-bottom-left-radius:6px; }
+      .reticle i:nth-child(4){ bottom:0; right:0; border-left:0;  border-top:0; border-bottom-right-radius:6px; }
+      .reticle .sweep {
+        position: absolute;
+        left: 6px; right: 6px;
+        height: 3px;
+        background: var(--orange);
+        box-shadow: 0 0 8px 1px var(--orange);
+        animation: sweep 1.9s ease-in-out infinite;
+      }
+
+      /* ---- In-AR scanning hint (compact band, bottom-anchored, brand) ---- */
+      .scan-hint {
+        position: fixed;
+        left: 50%;
+        bottom: calc(96px + env(safe-area-inset-bottom));
+        transform: translateX(-50%);
+        z-index: 50;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        font-family: var(--f-mono);
+        font-size: 12px;
+        letter-spacing: 1.5px;
+        text-transform: uppercase;
+        color: var(--ink);
+        background: var(--acid);
+        border: 2px solid var(--ink);
+        border-radius: 30px;
+        box-shadow: 3px 3px 0 var(--ink);
+        padding: 9px 16px;
+        white-space: nowrap;
+      }
+      .scan-hint[hidden] { display: none; }
+      .scan-hint .dot {
+        width: 9px; height: 9px; border-radius: 50%;
+        background: var(--ink);
+        animation: blink 1s steps(2, start) infinite;
+      }
+      @keyframes blink { 50% { opacity: 0.15; } }
+
+      /* ---- Persistent in-AR control bar ---- */
+      .controls {
+        position: fixed;
+        left: 0; right: 0;
+        bottom: calc(18px + env(safe-area-inset-bottom));
+        z-index: 60;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        gap: 12px;
+        padding: 0 calc(18px + env(safe-area-inset-right)) 0 calc(18px + env(safe-area-inset-left));
+        pointer-events: none;
+      }
+      .controls .btn { pointer-events: auto; }
+      .controls[hidden] { display: none; }
+
+      .icon-btn {
+        font-family: var(--f-mono);
+        font-size: 13px;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+      }
+
+      /* Snap button, pinned top-right (clear of the bottom control bar) */
+      .snap-top {
+        position: fixed;
+        top: calc(14px + env(safe-area-inset-top));
+        right: calc(14px + env(safe-area-inset-right));
+        z-index: 60;
+      }
+      .snap-top[hidden] { display: none; }
+
+      /* ---- Shutter flash ---- */
+      .flash {
+        position: fixed;
+        inset: 0;
+        z-index: 9000;
+        pointer-events: none;
+        opacity: 0;
+        background: var(--acid);
+      }
+      .flash.go { animation: flash 0.4s ease-out; }
+      .flash.shutter { background: var(--paper); }
+      @keyframes flash {
+        0%   { opacity: 0; }
+        12%  { opacity: 0.7; }
+        100% { opacity: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .flash.go { animation: none; }
+      }
+
+      /* ---- Lock-on toast (acid success chip, slides in from the top-left) ---- */
+      .lock-toast {
+        position: fixed;
+        top: calc(18px + env(safe-area-inset-top));
+        left: calc(18px + env(safe-area-inset-left));
+        z-index: 70;
+        pointer-events: none;
+        font-family: var(--f-display);
+        font-size: 15px;
+        letter-spacing: -0.3px;
+        text-transform: uppercase;
+        color: var(--ink);
+        background: var(--acid);
+        border: 2px solid var(--ink);
+        border-radius: 30px;
+        box-shadow: 3px 3px 0 var(--ink);
+        padding: 10px 18px;
+        white-space: nowrap;
+        transform: translateX(-160%);
+        opacity: 0;
+      }
+      .lock-toast[hidden] { display: none; }
+      .lock-toast.go { animation: lockToast 1.8s cubic-bezier(.2,.9,.25,1) both; }
+      @keyframes lockToast {
+        0%   { transform: translateX(-160%); opacity: 0; }
+        12%  { transform: translateX(6%);    opacity: 1; }
+        20%  { transform: translateX(0);     opacity: 1; }
+        80%  { transform: translateX(0);     opacity: 1; }
+        100% { transform: translateX(-160%); opacity: 0; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .lock-toast.go { animation: lockToastFade 1.8s ease both; }
+        @keyframes lockToastFade {
+          0%, 100% { opacity: 0; transform: translateX(0); }
+          15%, 80% { opacity: 1; transform: translateX(0); }
+        }
       }
     </style>
   </head>
-  <script>
-    AFRAME.registerComponent("video-controller", {
-      init: function () {
-        const target = document.getElementById("target");
-        const btn = document.getElementById("unmute-button");
-        const video = document.getElementById("myVideo");
 
-        target.addEventListener("targetFound", event => {
-          console.log("target found");
-          this.found = true;
-          video.play();
-        });
-
-        target.addEventListener("targetLost", event => {
-          console.log("target lost");
-          this.found = false;
-          video.pause();
-        });
-
-        btn.addEventListener("click", event => {
-          console.log("btn click");
-          if (this.found) video.muted = false;
-        });
-      }
-    });
-  </script>
   <body>
-    <div class="button-container">
-      <button id="unmute-button" class="button">Unmute 🔊</button>
-      <button id="store-button" class="button" onclick="window.location.href='https://theradical.store/'">Visit The Radical Store</button>
+    <!-- 1 ▸ ONBOARDING — also the user gesture that unlocks the camera -->
+    <section id="onboarding" class="overlay paper-grid">
+      <span class="kicker">★ The Radical Store · AR</span>
+      <h1 class="headline">Tap To<br>See <span class="pop">AR</span></h1>
+      <div class="scan-card">
+        <div class="scan-target">
+          <!-- Real target preview; falls back to the ⚡ frame if the file is missing -->
+          <img id="targetImg" src="target.jpeg" alt="The poster to point your camera at"
+               onerror="this.classList.add('is-missing')">
+          <i></i><i></i><i></i><i></i>
+          <span class="sweep"></span>
+        </div>
+        <p class="lede"><strong>This</strong> is your target — point your camera at the poster and watch it come alive, with sound.</p>
+      </div>
+      <button id="startBtn" class="btn btn--orange" type="button">Start Experience →</button>
+      <span class="kicker" style="opacity:.7">Needs camera access · works best in good light</span>
+    </section>
+
+    <!-- 2 ▸ LOADING -->
+    <section id="loading" class="overlay paper-grid" hidden>
+      <div class="loader-box" aria-hidden="true"></div>
+      <span class="kicker">Loading The Experience…</span>
+    </section>
+
+    <!-- 3 ▸ ERROR -->
+    <section id="error" class="overlay paper-grid" hidden>
+      <span class="kicker" style="color:var(--orange2)">★ Something Broke</span>
+      <h1 class="headline" style="font-size:clamp(32px,10vw,52px)">Camera<br>Needed</h1>
+      <p id="errorMsg" class="lede">We couldn't start the camera. Allow camera access, then reload.</p>
+      <button id="reloadBtn" class="btn btn--orange" type="button">Reload ↻</button>
+    </section>
+
+    <!-- 4 ▸ IN-AR viewfinder reticle -->
+    <div id="scanReticle" class="reticle" aria-hidden="true" hidden>
+      <i></i><i></i><i></i><i></i>
+      <span class="sweep"></span>
     </div>
-    
-    <a-scene mindar-image="imageTargetSrc: totoro.mind" color-space="sRGB" renderer="colorManagement: true, physicallyCorrectLights" vr-mode-ui="enabled: false" device-orientation-permission-ui="enabled: false">
+
+    <!-- 4 ▸ IN-AR scanning hint (text escalates if scanning takes a while) -->
+    <div id="scanHint" class="scan-hint" hidden>
+      <span class="dot" aria-hidden="true"></span>
+      <span id="scanText">Scanning · point at the poster</span>
+    </div>
+
+    <!-- Snap & Share — top-right -->
+    <button id="snapBtn" class="btn btn--orange icon-btn snap-top" type="button" hidden>📸 Snap</button>
+
+    <!-- 5 ▸ IN-AR controls -->
+    <div id="controls" class="controls" hidden>
+      <button id="soundBtn" class="btn btn--paper icon-btn" type="button" aria-pressed="true">🔇 Mute</button>
+      <button id="storeBtn" class="btn icon-btn" type="button">Visit Store →</button>
+    </div>
+
+    <!-- Shutter flash + lock-on toast -->
+    <div id="flash" class="flash" aria-hidden="true"></div>
+    <div id="lockToast" class="lock-toast" role="status" hidden>★ Found It</div>
+
+    <!-- ▸ The A-Frame AR scene (camera-controlled start; our own brand UI) -->
+    <a-scene
+      id="scene"
+      mindar-image="imageTargetSrc: totoro.mind; autoStart: false; uiScanning: no; uiLoading: no;"
+      color-space="sRGB"
+      renderer="colorManagement: true, physicallyCorrectLights"
+      vr-mode-ui="enabled: false"
+      loading-screen="enabled: false"
+      device-orientation-permission-ui="enabled: false"
+      snapshotter>
       <a-camera position="0 0 0" look-controls="enabled: false"></a-camera>
       <a-assets>
-        <video id="myVideo" src="Totoroo.mp4" muted preload loop></video>
+        <video id="myVideo" src="Totoroo.mp4" preload="auto" loop
+               playsinline webkit-playsinline crossorigin="anonymous"></video>
       </a-assets>
-      <a-entity mindar-image-target="targetIndex: 0" id="target">
-        <a-plane class="clickable" material="src: #myVideo; " width="1" height="1.5" video-controller></a-plane>
+      <a-entity id="target" mindar-image-target="targetIndex: 0">
+        <a-plane src="#myVideo" width="1" height="1.5" position="0 0 0"></a-plane>
       </a-entity>
     </a-scene>
+
+    <script>
+      // ---- UI refs ----
+      const onboarding = document.getElementById("onboarding");
+      const loading    = document.getElementById("loading");
+      const errorBox   = document.getElementById("error");
+      const errorMsg   = document.getElementById("errorMsg");
+      const scanHint   = document.getElementById("scanHint");
+      const scanReticle = document.getElementById("scanReticle");
+      const scanText   = document.getElementById("scanText");
+      const controls   = document.getElementById("controls");
+      const startBtn   = document.getElementById("startBtn");
+      const reloadBtn  = document.getElementById("reloadBtn");
+      const soundBtn   = document.getElementById("soundBtn");
+      const snapBtn    = document.getElementById("snapBtn");
+      const storeBtn   = document.getElementById("storeBtn");
+      const flash      = document.getElementById("flash");
+      const lockToast  = document.getElementById("lockToast");
+
+      const sceneEl = document.getElementById("scene");
+      const target  = document.getElementById("target");
+      const video   = document.getElementById("myVideo");
+
+      const show = (el) => el.hidden = false;
+      const hide = (el) => el.hidden = true;
+
+      let soundOn = true;           // default unmuted (primed on the Start tap)
+      let targetVisible = false;
+
+      // Brief full-screen flash — used for the Snap shutter
+      const triggerFlash = (variant = "") => {
+        flash.className = "flash";
+        void flash.offsetWidth;
+        flash.classList.add("go");
+        if (variant) flash.classList.add(variant);
+      };
+
+      // Lock-on toast — slide in "★ Found It", auto-dismiss after the animation
+      let lockToastTimer = null;
+      const showLockToast = () => {
+        clearTimeout(lockToastTimer);
+        lockToast.hidden = false;
+        lockToast.classList.remove("go");
+        void lockToast.offsetWidth;
+        lockToast.classList.add("go");
+        lockToastTimer = setTimeout(() => { lockToast.hidden = true; }, 1800);
+      };
+
+      // ---- Scanning coaching: escalate the hint if the poster isn't found ----
+      const COACH = [
+        "Scanning · point at the poster",
+        "Fit the whole poster inside the frame",
+        "More light & a steady hand helps",
+      ];
+      let coachTimers = [];
+      const clearCoach = () => { coachTimers.forEach(clearTimeout); coachTimers = []; };
+      const startCoach = () => {
+        clearCoach();
+        scanText.textContent = COACH[0];
+        coachTimers.push(setTimeout(() => { scanText.textContent = COACH[1]; }, 5000));
+        coachTimers.push(setTimeout(() => { scanText.textContent = COACH[2]; }, 12000));
+      };
+
+      const showScanning = () => { show(scanReticle); show(scanHint); startCoach(); };
+      const hideScanning = () => { hide(scanReticle); hide(scanHint); clearCoach(); };
+
+      const showError = (msg) => {
+        if (msg) errorMsg.textContent = msg;
+        hide(onboarding); hide(loading); hideScanning(); hide(controls); hide(snapBtn); hide(lockToast);
+        show(errorBox);
+      };
+
+      reloadBtn.addEventListener("click", () => window.location.reload());
+      storeBtn.addEventListener("click", () => { window.location.href = "https://theradical.store"; });
+
+      // Sound toggle — unmute/mute the video; play on unmute if currently visible
+      soundBtn.addEventListener("click", () => {
+        soundOn = !soundOn;
+        soundBtn.textContent = soundOn ? "🔇 Mute" : "🔊 Unmute";
+        soundBtn.setAttribute("aria-pressed", String(soundOn));
+        video.muted = !soundOn;
+        if (soundOn && targetVisible) video.play().catch(() => {});
+      });
+
+      // Snap & share — request a capture; the tock hook does it after a render
+      snapBtn.addEventListener("click", () => {
+        window.__snap.req = true;
+        triggerFlash("shutter");
+        if (navigator.vibrate) navigator.vibrate(15);
+      });
+
+      // Composite the live camera + AR canvas into one image and share it
+      const captureAndShare = () => {
+        const canvas = sceneEl.canvas;
+        if (!canvas || !canvas.width) return;
+        const w = canvas.width, h = canvas.height;
+
+        const cam = [...document.querySelectorAll("video")].find((v) => v.srcObject);
+
+        const out = document.createElement("canvas");
+        out.width = w; out.height = h;
+        const ctx = out.getContext("2d");
+
+        if (cam && cam.videoWidth) {
+          const vw = cam.videoWidth, vh = cam.videoHeight;
+          const s = Math.max(w / vw, h / vh);
+          const dw = vw * s, dh = vh * s;
+          ctx.drawImage(cam, (w - dw) / 2, (h - dh) / 2, dw, dh);
+        } else {
+          ctx.fillStyle = "#0d0d0d"; ctx.fillRect(0, 0, w, h);
+        }
+        ctx.drawImage(canvas, 0, 0, w, h);
+
+        // On-brand watermark (ink outline + acid fill, mono label voice)
+        const pad = Math.round(w * 0.035);
+        const fs  = Math.max(14, Math.round(w * 0.024));
+        ctx.font = `${fs}px 'DM Mono', monospace`;
+        ctx.textBaseline = "bottom";
+        const label = "LIVE YOUR LIFE WITH ART YOU LOVE · THERADICAL.STORE";
+        ctx.lineWidth = Math.max(2, fs * 0.2);
+        ctx.lineJoin = "round";
+        ctx.strokeStyle = "rgba(13,13,13,0.9)";
+        ctx.strokeText(label, pad, h - pad);
+        ctx.fillStyle = "#d4ff3f";
+        ctx.fillText(label, pad, h - pad);
+
+        out.toBlob(async (blob) => {
+          if (!blob) return;
+          const file = new File([blob], "totoro-ar.png", { type: "image/png" });
+          const shareData = {
+            files: [file],
+            title: "Totoro AR · The Radical Store",
+            text: "Live your life with art you love ⚡ theradical.store",
+          };
+          try {
+            if (navigator.canShare && navigator.canShare({ files: [file] })) {
+              await navigator.share(shareData);
+              return;
+            }
+          } catch (e) {
+            if (e && e.name === "AbortError") return;
+          }
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = "totoro-ar.png";
+          document.body.appendChild(a); a.click(); a.remove();
+          URL.revokeObjectURL(url);
+        }, "image/png");
+      };
+      window.__snap.capture = captureAndShare;
+
+      // ---- Target tracking ----
+      target.addEventListener("targetFound", () => {
+        targetVisible = true;
+        hideScanning();
+        showLockToast();
+        if (navigator.vibrate) navigator.vibrate(30);
+        video.muted = !soundOn;
+        video.play().catch(() => {});
+      });
+      target.addEventListener("targetLost", () => {
+        targetVisible = false;
+        video.pause();
+        showScanning();
+      });
+
+      // ---- AR lifecycle ----
+      sceneEl.addEventListener("arReady", () => {
+        hide(loading);
+        showScanning();
+        show(controls);
+        show(snapBtn);
+      });
+      sceneEl.addEventListener("arError", () => {
+        showError("We couldn't load the AR experience. Check your connection and reload.");
+      });
+
+      // Surface the true camera error before handing off to MindAR.
+      const preflightCamera = async () => {
+        if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+          const e = new Error("insecure-context"); e.name = "InsecureContext"; throw e;
+        }
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+        stream.getTracks().forEach((t) => t.stop());
+      };
+
+      const start = async () => {
+        try {
+          await preflightCamera();
+          if (!sceneEl.hasLoaded) {
+            await new Promise((r) => sceneEl.addEventListener("loaded", r, { once: true }));
+          }
+          const arSystem = sceneEl.systems["mindar-image-system"];
+          arSystem.start();   // arReady / arError fire from here
+        } catch (err) {
+          console.error("AR failed to start:", err);
+          const name = String(err?.name || "");
+          const msg  = String(err?.message || err || "");
+          if (name === "InsecureContext") {
+            showError("Open this over a web address, not a file. The camera only works on https:// or http://localhost — run a local server and visit the page there.");
+          } else if (/NotAllowed|Permission|denied/i.test(name + msg)) {
+            showError("Camera access was blocked. Allow the camera for this site in your browser, then reload.");
+          } else if (/NotFound|NotReadable|Overconstrained/i.test(name + msg)) {
+            showError("No usable camera was found. Check that a camera is connected and not in use by another app, then reload.");
+          } else {
+            showError("We couldn't load the AR experience. Check your connection and reload.");
+          }
+        }
+      };
+
+      // Onboarding tap = the user gesture that unlocks the camera
+      startBtn.addEventListener("click", () => {
+        // Prime the video within this user gesture so it may later play WITH
+        // sound when the target is found (mobile blocks unmuted autoplay that
+        // isn't tied to a gesture). Play unmuted, then immediately pause/reset.
+        video.muted = !soundOn;
+        video.play().then(() => { video.pause(); video.currentTime = 0; }).catch(() => {});
+        hide(onboarding);
+        show(loading);
+        start();
+      });
+    </script>
   </body>
 </html>
-

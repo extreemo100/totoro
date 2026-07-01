@@ -443,7 +443,7 @@
     <!-- ▸ The A-Frame AR scene (camera-controlled start; our own brand UI) -->
     <a-scene
       id="scene"
-      mindar-image="imageTargetSrc: totoro.mind; autoStart: false; uiScanning: no; uiLoading: no;"
+      mindar-image="imageTargetSrc: totoro.mind; autoStart: false; uiScanning: no; uiLoading: no; filterMinCF: 0.0001; filterBeta: 0.001;"
       color-space="sRGB"
       renderer="colorManagement: true, physicallyCorrectLights"
       vr-mode-ui="enabled: false"
